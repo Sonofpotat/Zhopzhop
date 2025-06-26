@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>🍑 Egg Catcher - Cute Game</title>
+  <style>
+    body {
+      background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #fecfef 100%);
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Comic Sans MS', cursive;
+    }
+    
+    .game-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      position: relative;
+    }
+    
+    canvas {
+      background: linear-gradient(180deg, #87CEEB 0%, #98FB98 100%);
+      border: 4px solid #fff;
+      border-radius: 20px;
+      box-shadow: 
+        0 0 30px rgba(255, 105, 180, 0.4),
+        inset 0 0 20px rgba(255, 255, 255, 0.2);
+      animation: floatCanvas 3s ease-in-out infinite;
+    }
+    
+    @keyframes floatCanvas {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-10px); }
+    }
+    
+    .ui-overlay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #fff;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+      z-index: 10;
+    }
+    
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      width: 100%;
+      text-align: center;
+      color: #fff;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    }
+    
+    .power-bar {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 200px;
+      height: 20px;
+      background: rgba(255,255,255,0.3);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    
+    .power-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcf7f);
+      transition: width 0.3s ease;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+<div class="game-container">
+  <div class="ui-overlay">
+    <div style="font-size: 24px; margin-bottom: 10px;">🍳 Score: <span id="scoreDisplay">0</span></div>
+    <div style="font-size: 18px;">⏱ Time: <span id="timeDisplay">30</span>s</div>
+    <div style="font-size: 16px;">🏆 Best: <span id="bestDisplay">0</span></div>
+  </div>
+  
+  <div class="power-bar">
+    <div class="power-fill" id="powerFill" style="width: 100%;"></div>
+  </div>
+  
+  <canvas id="game" width="500" height="700"></canvas>
+  
+  <div class="controls">
+    <div>🎮 Use ← → arrows to move | Enter to restart</div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+let booty = {
+  x: 210,
+  y: 620,
+  width: 80,
+  height: 80,
+  wiggle: 0,
+  trail: []
+};
+
+let direction = 0;
+let eggs = [];
+let score = 0;
+let bestScore = localStorage.getItem('bestScore') || 0;
+let timeLeft = 30;
+let gameRunning = true;
+let particles = [];
+let comboCount = 0;
+let lastCatchTime = 0;
+
+// Particle system for effects
+function createParticle(x, y, color) {
+  return {
+    x: x,
+    y: y,
+    vx: (Math.random() - 0.5) * 4,
+    vy: Math.random() * -3 - 1,
+    life: 1.0,
+    color: color,
+    size: Math.random() * 3 + 2
+  };
+}
+
+function spawnEgg() {
+  if (!gameRunning) return;
+  
+  // Special golden egg occasionally
+  const isGolden = Math.random() < 0.1;
+  
+  eggs.push({
+    x: Math.random() * (canvas.width - 40) + 20,
+    y: 0,
+    speed: 1.5 + Math.random() * 2,
+    rotation: Math.random() * 360,
+    rotationSpeed: (Math.random() * 4 - 2),
+    isGolden: isGolden,
+    trail: []
+  });
+}
+
+function drawEgg(egg) {
+  ctx.save();
+  ctx.translate(egg.x, egg.y);
+  ctx.rotate(egg.rotation * Math.PI / 180);
+
+  // Draw egg with better effects
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 14, 18, 0, 0, Math.PI * 2);
+  
+  if (egg.isGolden) {
+    const goldGradient = ctx.createRadialGradient(0, -5, 0, 0, 0, 18);
+    goldGradient.addColorStop(0, "#FFD700");
+    goldGradient.addColorStop(0.7, "#FFA500");
+    goldGradient.addColorStop(1, "#FF8C00");
+    ctx.fillStyle = goldGradient;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "#FFD700";
+  } else {
+    ctx.fillStyle = "#fffbe8";
+  }
+  
+  ctx.fill();
+  ctx.strokeStyle = egg.isGolden ? "#B8860B" : "#e0d6b9";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawBooty() {
+  ctx.save();
+  ctx.translate(booty.x + booty.width/2, booty.y + booty.height/2);
+  
+  // Enhanced wiggle with more personality
+  let wiggleOffset = Math.sin(booty.wiggle) * 5;
+  let bounceOffset = Math.sin(booty.wiggle * 2) * 2;
+  
+  // Gradient with better colors
+  const gradient = ctx.createRadialGradient(0, -5, 0, 0, 0, 35);
+  gradient.addColorStop(0, "#ffebd6");
+  gradient.addColorStop(0.6, "#ffdbac");
+  gradient.addColorStop(1, "#e6c799");
+  
+  // Left cheek with bounce
+  ctx.beginPath();
+  ctx.ellipse(-15 - wiggleOffset, -2 + bounceOffset, 28, 35, -0.1, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  
+  // Right cheek with bounce
+  ctx.beginPath();
+  ctx.ellipse(15 + wiggleOffset, -2 + bounceOffset, 28, 35, 0.1, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  
+  // Enhanced crack line
+  ctx.beginPath();
+  ctx.moveTo(0, -12);
+  ctx.lineTo(0, 25);
+  ctx.strokeStyle = "#d4a574";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  
+  // Animated highlights
+  const highlightAlpha = 0.4 + Math.sin(booty.wiggle * 0.5) * 0.1;
+  ctx.beginPath();
+  ctx.ellipse(-15 - wiggleOffset, -10 + bounceOffset, 15, 18, -0.1, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255, 255, 255, ${highlightAlpha})`;
+  ctx.fill();
+  
+  ctx.beginPath();
+  ctx.ellipse(15 + wiggleOffset, -10 + bounceOffset, 15, 18, 0.1, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255, 255, 255, ${highlightAlpha})`;
+  ctx.fill();
+  
+  ctx.restore();
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.1; // gravity
+    p.life -= 0.02;
+    
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function update() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw clouds background
+  drawClouds();
+  
+  drawBooty();
+  updateParticles();
+
+  for (let i = eggs.length - 1; i >= 0; i--) {
+    const egg = eggs[i];
+    egg.y += egg.speed;
+    egg.rotation += egg.rotationSpeed;
+    drawEgg(egg);
+
+    // Collision detection
+    if (
+      egg.y + 18 >= booty.y &&
+      egg.x >= booty.x &&
+      egg.x <= booty.x + booty.width
+    ) {
+      eggs.splice(i, 1);
+      
+      // Score calculation with combo system
+      const currentTime = Date.now();
+      if (currentTime - lastCatchTime < 1000) {
+        comboCount++;
+      } else {
+        comboCount = 1;
+      }
+      lastCatchTime = currentTime;
+      
+      const points = egg.isGolden ? 5 * comboCount : 1 * comboCount;
+      score += points;
+      
+      // Create particles
+      for (let j = 0; j < (egg.isGolden ? 15 : 8); j++) {
+        particles.push(createParticle(
+          egg.x, 
+          egg.y, 
+          egg.isGolden ? "#FFD700" : "#90EE90"
+        ));
+      }
+      
+      // Screen shake for golden eggs
+      if (egg.isGolden) {
+        canvas.style.transform = `translate(${Math.random() * 4 - 2}px, ${Math.random() * 4 - 2}px)`;
+        setTimeout(() => { canvas.style.transform = 'translate(0, 0)'; }, 100);
+      }
+      
+    } else if (egg.y > canvas.height) {
+      eggs.splice(i, 1);
+    }
+  }
+
+  // Update UI
+  document.getElementById('scoreDisplay').textContent = score;
+  document.getElementById('timeDisplay').textContent = timeLeft;
+  document.getElementById('bestDisplay').textContent = bestScore;
+  
+  // Update power bar (time remaining)
+  const powerPercent = (timeLeft / 30) * 100;
+  document.getElementById('powerFill').style.width = powerPercent + '%';
+
+  // Draw combo counter
+  if (comboCount > 1) {
+    ctx.fillStyle = "#FF1493";
+    ctx.font = "bold 20px Comic Sans MS";
+    ctx.textAlign = "center";
+    ctx.fillText(`${comboCount}x COMBO!`, canvas.width/2, 100);
+    ctx.textAlign = "left";
+  }
+
+  // Game over screen
+  if (!gameRunning) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = "#FF69B4";
+    ctx.font = "bold 32px Comic Sans MS";
+    ctx.textAlign = "center";
+    ctx.fillText("🎮 GAME OVER! 🎮", canvas.width/2, canvas.height/2 - 40);
+    
+    ctx.fillStyle = "#FFF";
+    ctx.font = "20px Comic Sans MS";
+    ctx.fillText(`Final Score: ${score}`, canvas.width/2, canvas.height/2);
+    ctx.fillText("Press ENTER to play again!", canvas.width/2, canvas.height/2 + 40);
+    ctx.textAlign = "left";
+  }
+}
+
+function drawClouds() {
+  ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+  // Simple cloud shapes
+  for (let i = 0; i < 3; i++) {
+    const x = (i * 150) + Math.sin(Date.now() * 0.001 + i) * 20;
+    const y = 50 + i * 20 + Math.sin(Date.now() * 0.0005 + i) * 10;
+    
+    ctx.beginPath();
+    ctx.arc(x, y, 20, 0, Math.PI * 2);
+    ctx.arc(x + 25, y, 25, 0, Math.PI * 2);
+    ctx.arc(x + 50, y, 20, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Spawn eggs more frequently
+setInterval(() => {
+  spawnEgg();
+}, 800);
+
+function gameLoop() {
+  booty.wiggle += Math.random() * (0.25 - 0.09) + 0.09;
+  update();
+  requestAnimationFrame(gameLoop);
+}
+
+let timer = setInterval(() => {
+  if (!gameRunning) return;
+  timeLeft--;
+  if (timeLeft <= 0) {
+    gameRunning = false;
+    if (score > bestScore) {
+      bestScore = score;
+      localStorage.setItem('bestScore', bestScore);
+    }
+  }
+}, 1000);
+
+document.addEventListener("keydown", function(e) {
+  if (e.key === "ArrowLeft") {
+    booty.x -= 25;
+    direction = -1;
+  }
+  if (e.key === "ArrowRight") {
+    booty.x += 25;
+    direction = 1;
+  }
+  if (e.key === "Enter" && !gameRunning) {
+    // Reset game
+    score = 0;
+    timeLeft = 30;
+    gameRunning = true;
+    eggs = [];
+    particles = [];
+    comboCount = 0;
+    direction = 0;
+  }
+  booty.x = Math.max(0, Math.min(canvas.width - booty.width, booty.x));
+});
+
+document.addEventListener("keyup", function(e) {
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    direction = 0;
+  }
+});
+
+// Start the game
+gameLoop();
+</script>
+</body>
+</html>
